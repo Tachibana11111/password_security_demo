@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block title %}Benchmark – So sánh tốc độ hash{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-1">
+  <h2 class="fw-semibold mb-0">Benchmark</h2>
+</div>
+
+<!-- Controls -->
+<div class="card mb-4">
+  <div class="card-body d-flex align-items-center gap-3 flex-wrap">
+    <div class="d-flex align-items-center gap-2">
+      <label class="form-label mb-0 small fw-semibold">Số lần lặp:</label>
+      <select id="repeatSel" class="form-select form-select-sm" style="width:90px">
+        <option value="3">3</option>
+        <option value="5" selected>5</option>
+        <option value="10">10</option>
+        <option value="20">20</option>
+      </select>
+    </div>
+    <button id="runBtn" class="btn btn-primary btn-sm" onclick="runBenchmark()">
+      <i class="bi bi-play-fill me-1"></i>Chạy Benchmark
+    </button>
+    <span id="status" class="text-muted small"></span>
+  </div>
+</div>
+
+<!-- Kết quả cards -->
+<div id="statsRow" class="row g-3 mb-4" style="display:none!important"></div>
+
+<!-- Charts -->
+<div class="row g-4" id="chartSection" style="display:none">
+  <div class="col-md-7">
+    <div class="card h-100">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-bar-chart-fill me-2"></i>Thời gian hash trung bình (ms)
+      </div>
+      <div class="card-body">
+        <canvas id="chartTime" height="260"></canvas>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-5">
+    <div class="card h-100">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-clock-history me-2"></i>Ước tính crack rockyou.txt
+      </div>
+      <div class="card-body">
+        <canvas id="chartCrack" height="260"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Bảng chi tiết -->
+<div class="card mt-4" id="tableSection" style="display:none">
+  <div class="card-header fw-semibold">
+    <i class="bi bi-table me-2"></i>Bảng chi tiết
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Thuật toán</th>
+          <th class="text-end">Thời gian (ms)</th>
+          <th class="text-end">Tốc độ (hash/s)</th>
+          <th class="text-end">Crack rockyou.txt</th>
+          <th class="text-center">An toàn?</th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script>
+let chartTime = null, chartCrack = null;
+
+async function runBenchmark() {
+  const btn    = document.getElementById('runBtn');
+  const status = document.getElementById('status');
+  const repeat = parseInt(document.getElementById('repeatSel').value);
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Đang chạy...';
+  status.textContent = 'bcrypt mỗi lần mất ~200ms, vui lòng chờ...';
+
+  try {
+    const res  = await fetch('/benchmark/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({repeat})
+    });
+    const data = await res.json();
+    renderResults(data);
+    status.textContent = `Xong! (${data.repeat} lần lặp mỗi thuật toán)`;
+  } catch(e) {
+    status.textContent = 'Lỗi: ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-play-fill me-1"></i>Chạy lại';
+  }
+}
+
+function renderResults(data) {
+  const stats  = data.stats;
+  const labels = stats.map(s => s.algo.replace(/\\n/g, '\n'));
+  const times  = stats.map(s => s.ms);
+  const hps    = stats.map(s => s.hps);
+  const safe   = stats.map(s => s.safe);
+
+  const colors = stats.map(s =>
+    s.safe ? 'rgba(25,135,84,0.8)' : 'rgba(220,53,69,0.8)'
+  );
+
+  // Cards
+  const statsRow = document.getElementById('statsRow');
+  statsRow.style.display = '';
+  statsRow.innerHTML = stats.map(s => `
+    <div class="col-6 col-md-4 col-lg">
+      <div class="card text-center p-3 ${s.safe ? 'border-success' : 'border-danger'}">
+        <div class="small fw-semibold mb-1">${s.algo.replace('\\n',' ')}</div>
+        <div class="fs-5 fw-bold ${s.safe ? 'text-success' : 'text-danger'}">${s.ms < 1 ? s.ms.toFixed(4) : s.ms.toFixed(1)} ms</div>
+        <div class="text-muted" style="font-size:11px">${s.hps.toLocaleString()} h/s</div>
+        <div class="mt-1" style="font-size:11px">${s.safe ? '' : ''} crack: ${s.crack_time}</div>
+      </div>
+    </div>
+  `).join('');
+
+  // Chart thời gian
+  document.getElementById('chartSection').style.display = '';
+  if (chartTime) chartTime.destroy();
+  chartTime = new Chart(document.getElementById('chartTime'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'ms / hash',
+        data: times,
+        backgroundColor: colors,
+        borderRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: {
+          type: times.some(t => t > 10) ? 'logarithmic' : 'linear',
+          title: { display: true, text: 'ms (log scale)' }
+        }
+      }
+    }
+  });
+
+  // Chart crack time
+  const crackSecs = stats.map(s => {
+    const secs = (s.hps > 0) ? 14344391 / s.hps : 0;
+    return Math.max(secs, 0.001);
+  });
+  if (chartCrack) chartCrack.destroy();
+  chartCrack = new Chart(document.getElementById('chartCrack'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Giây để crack rockyou.txt',
+        data: crackSecs,
+        backgroundColor: colors,
+        borderRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: {
+          type: 'logarithmic',
+          title: { display: true, text: 'Giây (log scale)' },
+          ticks: {
+            callback: v => {
+              if (v >= 86400)  return (v/86400).toFixed(0)+'d';
+              if (v >= 3600)   return (v/3600).toFixed(0)+'h';
+              if (v >= 60)     return (v/60).toFixed(0)+'m';
+              return v.toFixed(1)+'s';
+            }
+          }
+        }
+      }
+    }
+  });
+
+  // Table
+  document.getElementById('tableSection').style.display = '';
+  document.getElementById('tableBody').innerHTML = stats.map(s => `
+    <tr>
+      <td><strong>${s.algo.replace('\\n',' ')}</strong></td>
+      <td class="text-end font-monospace">${s.ms < 1 ? s.ms.toFixed(4) : s.ms.toFixed(2)}</td>
+      <td class="text-end font-monospace">${s.hps.toLocaleString()}</td>
+      <td class="text-end">${s.crack_time}</td>
+      <td class="text-center">${s.safe
+        ? '<span class="badge bg-success">An toàn</span>'
+        : '<span class="badge bg-danger">Không an toàn</span>'}</td>
+    </tr>
+  `).join('');
+
+  document.getElementById('conclusion').style.display = '';
+}
+</script>
+{% endblock %}
