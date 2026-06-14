@@ -108,7 +108,7 @@ def vulnerable_login():
     else:
         attempt = hashlib.sha256(password.encode()).hexdigest()
 
-    if attempt == user["hash"]:         # ← lỗ hổng timing attack ở đây
+    if attempt == user["hash"]:
         flash(f"Đăng nhập thành công! (hash so sánh bằng ==)", "warning")
     else:
         flash("Sai mật khẩu.", "danger")
@@ -207,6 +207,66 @@ def secure_clear():
     db.commit()
     flash("Đã xóa toàn bộ user.", "info")
     return redirect(url_for("secure"))
+
+@app.route("/benchmark")
+def benchmark():
+    return render_template("benchmark.html")
+
+@app.route("/benchmark/run", methods=["POST"])
+def benchmark_run():
+    repeat   = min(int(request.json.get("repeat", 5)), 20)
+    password = b"BenchmarkPassword123"
+    results  = {}
+
+    t0 = time.perf_counter()
+    for _ in range(repeat):
+        hashlib.md5(password).hexdigest()
+    results["MD5"] = (time.perf_counter() - t0) / repeat * 1000
+
+    t0 = time.perf_counter()
+    for _ in range(repeat):
+        hashlib.sha1(password).hexdigest()
+    results["SHA1"] = (time.perf_counter() - t0) / repeat * 1000
+
+    t0 = time.perf_counter()
+    for _ in range(repeat):
+        hashlib.sha256(password).hexdigest()
+    results["SHA256"] = (time.perf_counter() - t0) / repeat * 1000
+
+    t0 = time.perf_counter()
+    for _ in range(repeat):
+        bcrypt.hashpw(password, bcrypt.gensalt(rounds=10))
+    results["bcrypt\n(cost=10)"] = (time.perf_counter() - t0) / repeat * 1000
+
+    ph_bench = PasswordHasher(time_cost=2, memory_cost=65536, parallelism=2)
+    t0 = time.perf_counter()
+    for _ in range(repeat):
+        ph_bench.hash("BenchmarkPassword123")
+    results["argon2id\n(64MB)"] = (time.perf_counter() - t0) / repeat * 1000
+
+    ROCKYOU = 14_344_391
+    stats = []
+    for algo, ms in results.items():
+        hps        = 1000 / ms if ms > 0 else 0
+        secs_crack = ROCKYOU / hps if hps > 0 else float("inf")
+        if secs_crack < 60:
+            crack_str = f"{secs_crack:.1f} giây"
+        elif secs_crack < 3600:
+            crack_str = f"{secs_crack/60:.0f} phút"
+        elif secs_crack < 86400:
+            crack_str = f"{secs_crack/3600:.0f} giờ"
+        else:
+            crack_str = f"{secs_crack/86400:,.0f} ngày"
+
+        stats.append({
+            "algo":       algo,
+            "ms":         round(ms, 4),
+            "hps":        round(hps, 1),
+            "crack_time": crack_str,
+            "safe":       algo not in ("MD5", "SHA1", "SHA256"),
+        })
+
+    return jsonify({"repeat": repeat, "stats": stats})
 
 if __name__ == "__main__":
     init_db()
