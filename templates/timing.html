@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block title %}Timing Attack Demo{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center mb-1">
+  <h2 class="fw-semibold mb-0">Timing Attack</h2>
+</div>
+
+
+<!-- Chạy demo -->
+<div class="card mb-4">
+  <div class="card-body d-flex align-items-center gap-3 flex-wrap">
+    <button id="runBtn" class="btn btn-primary btn-sm" onclick="runTiming()">
+      <i class="bi bi-play-fill me-1"></i>Chạy đo thời gian (200 mẫu)
+    </button>
+    <span id="status" class="text-muted small"></span>
+  </div>
+</div>
+
+<!-- Charts -->
+<div id="chartSection" style="display:none">
+
+  <!-- Unsafe -->
+  <h5 class="fw-semibold mb-3 text-danger">
+    <i class="bi bi-bug-fill me-2"></i>Unsafe ( == )
+  </h5>
+  <div class="row g-3 mb-2" id="unsafeCards"></div>
+  <div class="card mb-4">
+    <div class="card-body">
+      <canvas id="chartUnsafe" height="160"></canvas>
+    </div>
+  </div>
+
+  <!-- Safe -->
+  <h5 class="fw-semibold mb-3 text-success">
+    <i class="bi bi-shield-check me-2"></i>Safe ( compare_digest )
+  </h5>
+  <div class="row g-3 mb-2" id="safeCards"></div>
+  <div class="card mb-4">
+    <div class="card-body">
+      <canvas id="chartSafe" height="160"></canvas>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script>
+let chartU = null, chartS = null;
+
+async function runTiming() {
+  const btn    = document.getElementById('runBtn');
+  const status = document.getElementById('status');
+
+  btn.disabled = true;
+
+  try {
+    const res  = await fetch('/timing/run', { method:'POST',
+      headers:{'Content-Type':'application/json'}, body:'{}' });
+    const data = await res.json();
+    renderTiming(data);
+  } catch(e) {
+    status.textContent = 'Lỗi: ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i>Chạy lại';
+  }
+}
+
+function statCard(label, stat, color) {
+  return `
+    <div class="col-6 col-md-3">
+      <div class="card text-center p-2 border-${color}">
+        <div style="font-size:11px;font-weight:600;color:#666">${label}</div>
+        <div class="fw-bold" style="font-size:15px">${Math.round(stat.mean)} ns</div>
+        <div style="font-size:10px;color:#999">±${Math.round(stat.stdev)} ns stdev</div>
+      </div>
+    </div>`;
+}
+
+function barChart(canvasId, labels, means, stdevs, colors, existing) {
+  if (existing) existing.destroy();
+  return new Chart(document.getElementById(canvasId), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Mean (ns)', data: means, backgroundColor: colors, borderRadius:5 },
+        { label: '±Stdev',    data: stdevs, backgroundColor: colors.map(c=>c.replace('0.8','0.3')), borderRadius:5 }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { position:'bottom', labels:{font:{size:11}} } },
+      scales: { y: { title:{ display:true, text:'Nanosecond (ns)' } } }
+    }
+  });
+}
+
+function renderTiming(data) {
+  document.getElementById('chartSection').style.display = '';
+
+  const u = data.unsafe;
+  const s = data.safe;
+
+  // Unsafe cards
+  document.getElementById('unsafeCards').innerHTML =
+    statCard('Đúng password',        u.correct,    'secondary') +
+    statCard('Sai byte ĐẦU (nhanh)', u.wrong_first,'danger') +
+    statCard('Sai byte GIỮA',        u.wrong_mid,  'warning') +
+    statCard('Sai byte CUỐI (chậm)', u.wrong_end,  'danger');
+
+  // Safe cards
+  document.getElementById('safeCards').innerHTML =
+    statCard('Đúng password',   s.correct,    'secondary') +
+    statCard('Sai byte đầu',    s.wrong_first,'success') +
+    statCard('Sai byte cuối',   s.wrong_end,  'success');
+
+  const dangerColors = ['rgba(108,117,125,0.8)','rgba(220,53,69,0.8)',
+                        'rgba(255,193,7,0.8)',  'rgba(220,53,69,0.8)'];
+  chartU = barChart('chartUnsafe',
+    ['Đúng','Sai đầu','Sai giữa','Sai cuối'],
+    [u.correct.mean, u.wrong_first.mean, u.wrong_mid.mean, u.wrong_end.mean],
+    [u.correct.stdev,u.wrong_first.stdev,u.wrong_mid.stdev,u.wrong_end.stdev],
+    dangerColors, chartU);
+
+  const safeColors = ['rgba(108,117,125,0.8)','rgba(25,135,84,0.8)','rgba(25,135,84,0.8)'];
+  chartS = barChart('chartSafe',
+    ['Đúng','Sai đầu','Sai cuối'],
+    [s.correct.mean, s.wrong_first.mean, s.wrong_end.mean],
+    [s.correct.stdev,s.wrong_first.stdev,s.wrong_end.stdev],
+    safeColors, chartS);
+}
+</script>
+{% endblock %}
