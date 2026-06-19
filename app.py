@@ -108,7 +108,7 @@ def vulnerable_login():
     else:
         attempt = hashlib.sha256(password.encode()).hexdigest()
 
-    if attempt == user["hash"]:
+    if attempt == user["hash"]:         # ← lỗ hổng timing attack ở đây
         flash(f"Đăng nhập thành công! (hash so sánh bằng ==)", "warning")
     else:
         flash("Sai mật khẩu.", "danger")
@@ -267,6 +267,61 @@ def benchmark_run():
         })
 
     return jsonify({"repeat": repeat, "stats": stats})
+
+@app.route("/timing")
+def timing():
+    return render_template("timing.html")
+
+@app.route("/timing/run", methods=["POST"])
+def timing_run():
+    SAMPLES  = 200
+    SECRET   = secrets.token_hex(32)
+    CORRECT  = SECRET
+    WRONG_1  = "x" + SECRET[1:]
+    WRONG_MID= SECRET[:16] + "x" + SECRET[17:]
+    WRONG_END= SECRET[:-1] + "x"
+
+    def measure(fn, n=SAMPLES):
+        times = []
+        for _ in range(n):
+            t0 = time.perf_counter_ns()
+            fn()
+            times.append(time.perf_counter_ns() - t0)
+        return times
+
+    unsafe_correct  = measure(lambda: SECRET == CORRECT)
+    unsafe_wrong1   = measure(lambda: SECRET == WRONG_1)
+    unsafe_wrong_mid= measure(lambda: SECRET == WRONG_MID)
+    unsafe_wrong_end= measure(lambda: SECRET == WRONG_END)
+
+    safe_correct    = measure(lambda: hmac.compare_digest(SECRET, CORRECT))
+    safe_wrong1     = measure(lambda: hmac.compare_digest(SECRET, WRONG_1))
+    safe_wrong_end  = measure(lambda: hmac.compare_digest(SECRET, WRONG_END))
+
+    def summarize(times):
+        return {
+            "mean":   round(statistics.mean(times), 1),
+            "median": round(statistics.median(times), 1),
+            "stdev":  round(statistics.stdev(times), 1),
+            "min":    min(times),
+            "max":    max(times),
+            "raw":    times[:80],
+        }
+
+    return jsonify({
+        "samples": SAMPLES,
+        "unsafe": {
+            "correct":   summarize(unsafe_correct),
+            "wrong_first": summarize(unsafe_wrong1),
+            "wrong_mid": summarize(unsafe_wrong_mid),
+            "wrong_end": summarize(unsafe_wrong_end),
+        },
+        "safe": {
+            "correct":   summarize(safe_correct),
+            "wrong_first": summarize(safe_wrong1),
+            "wrong_end": summarize(safe_wrong_end),
+        },
+    })
 
 if __name__ == "__main__":
     init_db()
