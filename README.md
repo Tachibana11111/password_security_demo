@@ -152,14 +152,6 @@ File `demo.db` tự tạo khi chạy lần đầu, không commit vào repo. `roc
 ![Timing Attack](docs/images/06_save_timing.png)
 *Safe (`compare_digest`): thời gian đồng đều.*
 
----
-
-## Video Demo
-
-[![Xem Video Demo](docs/images/video_thumbnail.png)](https://youtu.be/PLACEHOLDER)
-
----
-
 ## Tài liệu Tham khảo
 
 - [OWASP Password Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)
