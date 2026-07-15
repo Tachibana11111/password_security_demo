@@ -147,14 +147,10 @@ File `demo.db` tự tạo khi chạy lần đầu, không commit vào repo. `roc
 ### Timing Attack
 
 ![Timing Attack](docs/images/05_timing.png)
-*Unsafe (`==`): sai byte đầu nhanh hơn sai byte cuối ~30ns. Safe (`compare_digest`): thời gian đồng đều*
+*Unsafe (`==`): sai byte đầu nhanh hơn sai byte cuối ~30ns.*
 
----
-
-### Crack Demo
-
-![Crack Demo](docs/images/06_crack_demo.png)
-*MD5: crack `123456` trong < 1ms. bcrypt: 500 lần thử mất ~105 giây*
+![Timing Attack](docs/images/06_save_timing.png)
+*Safe (`compare_digest`): thời gian đồng đều.*
 
 ---
 
